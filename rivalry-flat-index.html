@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Rivalry — Competition</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">⚔ THE RIVALRY</a>
+  <ul class="nav-links">
+    <li><a href="index.html" id="nav-home">Arena</a></li>
+    <li><a href="jacob.html" id="nav-jacob" class="jacob-link">Jacob</a></li>
+    <li><a href="gabby.html" id="nav-gabby" class="gabby-link">Gabby</a></li>
+    <li><a href="history.html" id="nav-history">History</a></li>
+  </ul>
+</nav>
+
+<div class="page" id="app">
+  <div class="spinner"></div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+setActive('#nav-home');
+
+const monday = getMondayOfWeek();
+const weekStart = toISO(monday);
+const weekDates = getWeekDates(monday);
+
+async function render() {
+  const app = document.getElementById('app');
+
+  // Load data in parallel
+  const [jacobGoals, gabbyGoals, jacobCheckins, gabbyCheckins, allTimeRecord] = await Promise.all([
+    getWeekGoals('jacob', weekStart),
+    getWeekGoals('gabby', weekStart),
+    getCheckins('jacob', weekStart),
+    getCheckins('gabby', weekStart),
+    getAllTimeRecord()
+  ]);
+
+  const jacobScore = computeWeekScore(jacobCheckins);
+  const gabbyScore = computeWeekScore(gabbyCheckins);
+  const maxScore = 10;
+
+  const leading = jacobScore > gabbyScore ? 'jacob'
+    : gabbyScore > jacobScore ? 'gabby' : 'tied';
+
+  const totalGames = allTimeRecord.jacob + allTimeRecord.gabby + allTimeRecord.tie;
+
+  app.innerHTML = `
+    <!-- ALL-TIME HEADER -->
+    <div style="text-align:center; margin-bottom: 3rem;">
+      <div class="text-muted text-mono mb-1" style="font-size:0.75rem; letter-spacing:0.15em; text-transform:uppercase;">All-Time Record</div>
+      <div class="record-display">
+        <span style="color: var(--jacob)">${allTimeRecord.jacob}</span>
+        <span style="color: var(--muted); font-size:0.6em; margin: 0 0.3em">-</span>
+        <span style="color: var(--gabby)">${allTimeRecord.gabby}</span>
+        ${allTimeRecord.tie > 0 ? `<span style="color:var(--muted); font-size:0.5em; margin-left: 0.5em">+${allTimeRecord.tie}T</span>` : ''}
+      </div>
+      <div class="text-muted mt-1" style="font-size:0.8rem;">
+        ${totalGames === 0 ? 'No weeks completed yet — first week in progress' : `${totalGames} week${totalGames !== 1 ? 's' : ''} played`}
+      </div>
+    </div>
+
+    <!-- CURRENT WEEK -->
+    <div class="flex-between mb-2">
+      <div>
+        <div class="section-title">This Week</div>
+        <div class="text-muted" style="font-size:0.85rem;">${formatWeekRange(weekStart)}</div>
+      </div>
+      ${leading !== 'tied'
+        ? `<div class="leading-tag ${leading}">⚡ ${leading === 'jacob' ? 'Jacob' : 'Gabby'} Leading</div>`
+        : `<div class="leading-tag tied">⚖ Tied</div>`
+      }
+    </div>
+
+    <!-- SCORE BATTLE -->
+    <div class="score-battle">
+      <div class="score-side jacob-side">
+        <div class="player-name">JACOB</div>
+        <div class="score-number" style="color: var(--jacob)">${jacobScore}</div>
+        <div class="score-max">/ ${maxScore} pts</div>
+        <div class="progress-bar mt-2">
+          <div class="progress-fill jacob" style="width:${(jacobScore/maxScore)*100}%"></div>
+        </div>
+        ${jacobGoals ? `
+          <div style="margin-top:1rem; text-align:left;">
+            <div class="text-muted mb-1" style="font-size:0.75rem; letter-spacing:0.08em; text-transform:uppercase;">Goals</div>
+            <div style="font-size:0.9rem; margin-bottom:0.3rem;">✦ ${jacobGoals.goal_1}</div>
+            <div style="font-size:0.9rem;">✦ ${jacobGoals.goal_2}</div>
+          </div>
+        ` : `<div class="text-muted mt-2" style="font-size:0.8rem;">No goals set yet</div>`}
+      </div>
+
+      <div class="vs-divider">VS</div>
+
+      <div class="score-side gabby-side">
+        <div class="player-name">GABBY</div>
+        <div class="score-number" style="color: var(--gabby)">${gabbyScore}</div>
+        <div class="score-max">/ ${maxScore} pts</div>
+        <div class="progress-bar mt-2">
+          <div class="progress-fill gabby" style="width:${(gabbyScore/maxScore)*100}%"></div>
+        </div>
+        ${gabbyGoals ? `
+          <div style="margin-top:1rem; text-align:left;">
+            <div class="text-muted mb-1" style="font-size:0.75rem; letter-spacing:0.08em; text-transform:uppercase;">Goals</div>
+            <div style="font-size:0.9rem; margin-bottom:0.3rem;">✦ ${gabbyGoals.goal_1}</div>
+            <div style="font-size:0.9rem;">✦ ${gabbyGoals.goal_2}</div>
+          </div>
+        ` : `<div class="text-muted mt-2" style="font-size:0.8rem;">No goals set yet</div>`}
+      </div>
+    </div>
+
+    <!-- DAILY BREAKDOWN -->
+    <div class="grid-2 mt-4">
+      ${renderDayGrid('jacob', jacobCheckins, jacobGoals)}
+      ${renderDayGrid('gabby', gabbyCheckins, gabbyGoals)}
+    </div>
+
+    <!-- CLOSE THE WEEK (if Friday and scores exist) -->
+    ${canCloseWeek(jacobCheckins, gabbyCheckins) ? renderCloseWeekBanner(jacobScore, gabbyScore) : ''}
+  `;
+
+  // Event listeners
+  const closeBtn = document.getElementById('close-week-btn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeWeek.bind(null, jacobScore, gabbyScore));
+  }
+}
+
+function renderDayGrid(player, checkins, goals) {
+  const color = player === 'jacob' ? 'jacob' : 'gabby';
+  const name = player === 'jacob' ? 'Jacob' : 'Gabby';
+  const checkinMap = {};
+  checkins.forEach(c => { checkinMap[c.checkin_date] = c; });
+
+  const cells = weekDates.map((date, i) => {
+    const dateStr = toISO(date);
+    const c = checkinMap[dateStr];
+    const future = isFuture(date);
+    const today = isToday(date);
+    const score = c ? (c.goal_1_done ? 1 : 0) + (c.goal_2_done ? 1 : 0) : 0;
+
+    let cls = 'day-cell';
+    if (future) cls += ' future';
+    else if (today) cls += ' today';
+    if (c) {
+      if (score === 2) cls += ` complete-${color}`;
+      else if (score === 1) cls += ' partial';
+    }
+
+    return `
+      <div class="${cls}">
+        <span class="day-label">${DAY_LABELS[i]}</span>
+        <span class="day-score">${future ? '—' : score + '/2'}</span>
+      </div>
+    `;
+  });
+
+  const totalDone = checkins.reduce((s, c) => s + (c.goal_1_done?1:0) + (c.goal_2_done?1:0), 0);
+
+  return `
+    <div class="card ${color}-card">
+      <div class="flex-between mb-2">
+        <span style="font-weight:600; color: var(--${color})">${name}</span>
+        <span class="text-mono" style="font-size:0.85rem; color: var(--muted)">${totalDone}/10 pts</span>
+      </div>
+      <div class="day-grid">${cells.join('')}</div>
+      <a href="${player}.html" class="btn btn-${color} mt-2" style="width:100%; justify-content:center; font-size:0.85rem;">
+        Go to ${name}'s Page →
+      </a>
+    </div>
+  `;
+}
+
+function canCloseWeek(jacobCheckins, gabbyCheckins) {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  // Show close button on Fri (5) or over the weekend (6,0)
+  return dayOfWeek >= 5 || dayOfWeek === 0;
+}
+
+function renderCloseWeekBanner(jacobScore, gabbyScore) {
+  const winner = jacobScore > gabbyScore ? 'jacob' : gabbyScore > jacobScore ? 'gabby' : 'tie';
+  const winnerLabel = winner === 'jacob' ? '🏆 Jacob wins this week!' : winner === 'gabby' ? '🏆 Gabby wins this week!' : "🤝 It's a tie!";
+  return `
+    <div class="card mt-4" style="border-color: var(--gold); background: rgba(245,158,11,0.05); text-align:center;">
+      <div style="font-family:'Anton',sans-serif; font-size:1.2rem; color: var(--gold); margin-bottom:0.5rem;">WEEK COMPLETE</div>
+      <div style="font-size:1.1rem; margin-bottom:1rem;">${winnerLabel} <span class="text-muted">(${jacobScore}–${gabbyScore})</span></div>
+      <button class="btn" id="close-week-btn" style="background: var(--gold); color: #000; margin: 0 auto;">
+        Lock In Results & Start Next Week
+      </button>
+    </div>
+  `;
+}
+
+async function closeWeek(jacobScore, gabbyScore) {
+  const btn = document.getElementById('close-week-btn');
+  btn.textContent = 'Saving…';
+  btn.disabled = true;
+
+  const winner = jacobScore > gabbyScore ? 'jacob' : gabbyScore > jacobScore ? 'gabby' : 'tie';
+  const { error } = await db.from('weekly_results').upsert({
+    week_start: weekStart,
+    jacob_score: jacobScore,
+    gabby_score: gabbyScore,
+    winner
+  }, { onConflict: 'week_start' });
+
+  if (error) {
+    showToast('Error saving — try again');
+    btn.textContent = 'Lock In Results & Start Next Week';
+    btn.disabled = false;
+  } else {
+    showToast('Week locked in! 🏆');
+    setTimeout(() => render(), 1000);
+  }
+}
+
+render();
+</script>
+</body>
+</html>
